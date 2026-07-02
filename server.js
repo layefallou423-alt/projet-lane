@@ -26,6 +26,10 @@ const client = twilio(accountSid, authToken);
 // ---------------------------------------------------------------
 // 1. CATALOGUE — à modifier/compléter au fur et à mesure que tu
 //    ajoutes des chapitres. C'est ici que tu gères tout ton contenu.
+//
+//    "mots_cles" = les mots que l'élève pourrait taper pour désigner
+//    ce chapitre. Mets-en plusieurs variantes (accents, abréviations,
+//    fautes courantes) pour que le bot comprenne un maximum de monde.
 // ---------------------------------------------------------------
 const CATALOGUE = {
   "1": {
@@ -34,6 +38,7 @@ const CATALOGUE = {
     prix: 100, // en FCFA
     lien_paiement: "https://paytech.sn/payment/xxxxxx", // lien généré depuis ton compte PayTech
     lien_contenu: "https://lien-vers-ton-fichier-sur-drive.com/alcools.pdf",
+    mots_cles: ["alcool", "alcools", "pc terminale", "chimie terminale"],
   },
   "2": {
     matiere: "Physique-Chimie Terminale",
@@ -41,9 +46,49 @@ const CATALOGUE = {
     prix: 100,
     lien_paiement: "https://paytech.sn/payment/yyyyyy",
     lien_contenu: "https://lien-vers-ton-fichier-sur-drive.com/amines.pdf",
+    mots_cles: ["amine", "amines"],
   },
   // Ajoute ici tes prochains chapitres au même format...
+  // Exemple pour la Première S, dès que le contenu sera prêt :
+  // "3": {
+  //   matiere: "Physique-Chimie Première S",
+  //   chapitre: "Programme complet",
+  //   prix: 100,
+  //   lien_paiement: "https://paytech.sn/payment/zzzzzz",
+  //   lien_contenu: "https://lien-vers-ton-fichier.com/programme-1ereS.pdf",
+  //   mots_cles: ["1ere s", "1ère s", "premiere s", "première s", "pc 1ere", "programme pc"],
+  // },
 };
+
+// ---------------------------------------------------------------
+// Enlève les accents et met en minuscules, pour comparer plus
+// facilement des textes tapés différemment ("Première" = "premiere")
+// ---------------------------------------------------------------
+function normaliser(texte) {
+  return texte
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // enlève les accents
+}
+
+// ---------------------------------------------------------------
+// Cherche dans le CATALOGUE un ou plusieurs chapitres dont un mot-clé
+// apparaît dans le message envoyé par l'élève.
+// ---------------------------------------------------------------
+function chercherParMotsCles(messageBrut) {
+  const message = normaliser(messageBrut);
+  const resultats = [];
+
+  for (const [num, item] of Object.entries(CATALOGUE)) {
+    const trouve = item.mots_cles.some((mot) =>
+      message.includes(normaliser(mot))
+    );
+    if (trouve) {
+      resultats.push(num);
+    }
+  }
+  return resultats;
+}
 
 // ---------------------------------------------------------------
 // 2. ÉTAT DE CONVERSATION (en mémoire — simple pour démarrer)
@@ -66,8 +111,37 @@ app.post("/whatsapp", async (req, res) => {
 
   let reponse = "";
 
-  // --- Étape ACCUEIL ---
-  if (session.etape === "accueil" || body.toLowerCase() === "menu") {
+  // --- Détection de texte libre (marche depuis n'importe quelle étape) ---
+  // Si l'élève tape directement "programme de pc 1ere S exos 100f" par exemple,
+  // on cherche si ça correspond à un chapitre du catalogue.
+  const correspondances =
+    body.toLowerCase() !== "menu" ? chercherParMotsCles(body) : [];
+
+  if (correspondances.length === 1) {
+    // Un seul chapitre correspond -> on saute direct à la proposition de paiement
+    const num = correspondances[0];
+    const item = CATALOGUE[num];
+    session.etape = "attente_paiement";
+    session.chapitreChoisi = num;
+    reponse =
+      `Tu cherches : *${item.chapitre}* (${item.matiere})\n` +
+      `Prix : ${item.prix} FCFA\n\n` +
+      `Paye ici (Wave, Orange Money ou carte) :\n${item.lien_paiement}\n\n` +
+      `Une fois payé, écris *"payé"* ici et je t'envoie le fichier direct.`;
+  } else if (correspondances.length > 1) {
+    // Plusieurs chapitres correspondent -> on affiche seulement ceux-là
+    let texte = "J'ai trouvé plusieurs chapitres qui correspondent :\n\n";
+    for (const num of correspondances) {
+      const item = CATALOGUE[num];
+      texte += `*${num}.* ${item.chapitre} (${item.matiere}) — ${item.prix} FCFA\n`;
+    }
+    texte += "\nRéponds avec le numéro qui t'intéresse.";
+    reponse = texte;
+    session.etape = "choix_chapitre";
+  }
+
+  // --- Étape ACCUEIL (si aucun mot-clé reconnu) ---
+  else if (session.etape === "accueil" || body.toLowerCase() === "menu") {
     reponse = construireMenu();
     session.etape = "choix_chapitre";
   }
