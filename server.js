@@ -50,7 +50,7 @@ const CATALOGUE = {
     matiere: "Physique-Chimie Terminale",
     chapitre: "Les Alcools",
     prix: 100, // en FCFA
-    lien_contenu: "https://lien-vers-ton-fichier-sur-drive.com/alcools.pdf",
+    lien_contenu: "https://drive.google.com/file/d/1QdIwaWpY-c6UOS6xj79gLM5bqPZVxKfN/view?usp=sharing",
     mots_cles: ["alcool", "alcools", "pc terminale", "chimie terminale"],
   },
   "2": {
